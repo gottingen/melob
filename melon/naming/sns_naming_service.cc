@@ -27,44 +27,52 @@
 #include <melon/utility/third_party/rapidjson/writer.h>
 #include <melon/utility/string_splitter.h>
 #include <turbo/flags/flag.h>
-
-TURBO_FLAG(std::string, sns_server, "", "The address of sns api");
-TURBO_FLAG(int, sns_timeout_ms, 3000, "Timeout for discovery requests");
-TURBO_FLAG(std::string, sns_env, "prod", "Environment of services");
-TURBO_FLAG(std::string, sns_status, "1", "Status of services. 1 for normal, 2 for slow, 3 for full, 4 for dead");
-TURBO_FLAG(std::string, sns_zone, "", "Zone of services");
-TURBO_FLAG(std::string, sns_color, "", "Zone of services");
-TURBO_FLAG(int, sns_renew_interval_s, 30, "The interval between two consecutive renews");
-TURBO_FLAG(int, sns_reregister_threshold, 3, "The renew error threshold beyond"
-                                          " which Register would be called again");
+#include <turbo/container/flat_hash_set.h>
 
 namespace melon::naming {
+    static turbo::flat_hash_set<std::string> sns_status_set = {"1", "2", "3", "4"};
+}  // namespace melon::naming
+TURBO_FLAG(std::string, sns_server, "", "The address of sns api").on_validate(turbo::AllPassValidator<std::string>::validate);
+TURBO_FLAG(int, sns_timeout_ms, 3000, "Timeout for discovery requests");
+TURBO_FLAG(std::string, sns_status, "1",
+           "Status of services. 1 for normal, 2 for slow, 3 for full, 4 for dead").on_validate(
+        [](std::string_view value, std::string *err) noexcept -> bool {
+            if (melon::naming::sns_status_set.find(value) == melon::naming::sns_status_set.end()) {
+                *err = "Invalid status, should be 1, 2, 3 or 4";
+                return false;
+            }
+            return true;
+        });
 
-    static std::once_flag g_init_sns_channel_once;
-    static Channel *g_sns_channel{nullptr};
+TURBO_FLAG(int, sns_renew_interval_s, 30, "The interval between two consecutive renews").on_validate(
+        turbo::GtValidator<int, 5>::validate);
+TURBO_FLAG(int, sns_reregister_threshold, 3, "The renew error threshold beyond"
+                                             " which Register would be called again");
+
+namespace melon::naming {
 
     static inline melon::PeerStatus to_peer_status(const std::string &status) {
         if (status == "1") {
             return melon::PeerStatus::NORMAL;
         } else if (status == "2") {
             return melon::PeerStatus::SLOW;
-        } else if (status == "3"){
+        } else if (status == "3") {
             return melon::PeerStatus::FULL;
         } else {
             return melon::PeerStatus::DEAD;
         }
     }
 
-    static void NewSnsChannel() {
+    static turbo::Status make_sns_channel(Channel *channel) {
         ChannelOptions channel_options;
-        channel_options.protocol = PROTOCOL_HTTP;
+        channel_options.protocol = PROTOCOL_MELON_STD;
         channel_options.timeout_ms = turbo::get_flag(FLAGS_sns_timeout_ms);
         channel_options.connect_timeout_ms = turbo::get_flag(FLAGS_sns_timeout_ms) / 3;
-        g_sns_channel = new Channel;
-        if (g_sns_channel->Init(turbo::get_flag(FLAGS_sns_server).c_str(), "rr", &channel_options) != 0) {
+        if (channel->Init(turbo::get_flag(FLAGS_sns_server).c_str(), "rr", &channel_options) != 0) {
             LOG(ERROR) << "Fail to init channel to " << turbo::get_flag(FLAGS_sns_server);
-            return;
+            return turbo::internal_error("Fail to init channel");
         }
+        return turbo::OkStatus();
     }
 
     static bool is_valid(const melon::SnsPeer &peer) {
@@ -76,9 +84,59 @@ namespace melon::naming {
                peer.has_address() && !peer.address().empty();
     }
 
-    inline Channel *GetOrNewSnsChannel() {
-        std::call_once(g_init_sns_channel_once, NewSnsChannel);
-        return g_sns_channel;
+
+    turbo::Status
+    SnsNamingParams::register_service(const std::string &service_name, const std::shared_ptr<melon::SnsRequest> &req) {
+        // check request
+        if(service_name.empty()) {
+            return turbo::invalid_argument_error("service_name is empty");
+        }
+        STATUS_RETURN_IF_ERROR(check_service_name(req.get()));
+        std::unique_lock lock(_mutex);
+        auto it = _services.find(service_name);
+        if (it != _services.end()) {
+            return turbo::invalid_argument_error("service already exists");
+        }
+        _services[service_name] = req;
+        return turbo::OkStatus();
+    }
+
+    turbo::Status SnsNamingParams::check_service_name(turbo::Nonnull<const melon::SnsRequest *> req) const {
+        if (!req->has_app_name()) {
+            return turbo::invalid_argument_error("app_name is empty");
+        }
+
+        if (req->zones().empty()) {
+            return turbo::invalid_argument_error("zones is empty");
+        }
+
+        if (req->env().empty()) {
+            return turbo::invalid_argument_error("envs is empty");
+        }
+
+        if (req->color().empty()) {
+            return turbo::invalid_argument_error("colors is empty");
+        }
+        return turbo::OkStatus();
+    }
+
+    turbo::Status SnsNamingParams::update_service(const std::string &service_name, const std::shared_ptr<melon::SnsRequest> &req) {
+        if(service_name.empty()) {
+            return turbo::invalid_argument_error("service_name is empty");
+        }
+        STATUS_RETURN_IF_ERROR(check_service_name(req.get()));
+        std::unique_lock lock(_mutex);
+        _services[service_name] = req;
+        return turbo::OkStatus();
+    }
+
+    std::shared_ptr<melon::SnsRequest> SnsNamingParams::get_service(std::string_view service_name) {
+        std::shared_lock lock(_mutex);
+        auto it = _services.find(service_name);
+        if (it == _services.end()) {
+            return nullptr;
+        }
+        return it->second;
     }
 
     SnsNamingClient::SnsNamingClient()
@@ -88,7 +146,7 @@ namespace melon::naming {
     SnsNamingClient::~SnsNamingClient() {
         if (_registered.load(mutil::memory_order_acquire)) {
             fiber_stop(_th);
-            fiber_join(_th, NULL);
+            fiber_join(_th, nullptr);
             do_cancel();
         }
     }
@@ -106,7 +164,7 @@ namespace melon::naming {
         if (do_register() != 0) {
             return -1;
         }
-        if (fiber_start_background(&_th, NULL, periodic_renew, this) != 0) {
+        if (fiber_start_background(&_th, nullptr, periodic_renew, this) != 0) {
             LOG(ERROR) << "Fail to start background PeriodicRenew";
             return -1;
         }
@@ -114,15 +172,15 @@ namespace melon::naming {
     }
 
     int SnsNamingClient::do_register() {
-        Channel *chan = GetOrNewSnsChannel();
-        if (NULL == chan) {
+        Channel chan;
+        if(!make_sns_channel(&chan).ok()) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
         Controller cntl;
-        melon::SnsService_Stub stub(chan);
+        melon::SnsService_Stub stub(&chan);
         melon::SnsResponse response;
-        stub.registry(&cntl, &_params, &response, NULL);
+        stub.registry(&cntl, &_params, &response, nullptr);
         if (cntl.Failed()) {
             LOG(ERROR) << "Fail to register peer: " << cntl.ErrorText();
             return -1;
@@ -136,17 +194,18 @@ namespace melon::naming {
     }
 
     int SnsNamingClient::do_renew() const {
-        Channel *chan = GetOrNewSnsChannel();
-        if (NULL == chan) {
+        Channel chan;
+        if(!make_sns_channel(&chan).ok()) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
+
         Controller cntl;
-        melon::SnsService_Stub stub(chan);
+        melon::SnsService_Stub stub(&chan);
         melon::SnsResponse response;
         auto request = _params;
         request.set_status(to_peer_status(turbo::get_flag(FLAGS_sns_status)));
-        stub.update(&cntl, &request, &response, NULL);
+        stub.update(&cntl, &request, &response, nullptr);
         if (cntl.Failed()) {
             LOG(ERROR) << "Fail to register peer: " << cntl.ErrorText();
             return -1;
@@ -159,15 +218,15 @@ namespace melon::naming {
     }
 
     int SnsNamingClient::do_cancel() const {
-        Channel *chan = GetOrNewSnsChannel();
-        if (NULL == chan) {
+        Channel chan;
+        if(!make_sns_channel(&chan).ok()) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
         Controller cntl;
-        melon::SnsService_Stub stub(chan);
+        melon::SnsService_Stub stub(&chan);
         melon::SnsResponse response;
-        stub.cancel(&cntl, &_params, &response, NULL);
+        stub.cancel(&cntl, &_params, &response, nullptr);
         if (cntl.Failed()) {
             LOG(ERROR) << "Fail to register peer: " << cntl.ErrorText();
             return -1;
@@ -186,7 +245,7 @@ namespace melon::naming {
                                mutil::fast_rand_less_than(turbo::get_flag(FLAGS_sns_renew_interval_s) / 2);
         if (fiber_usleep(init_sleep_s * 1000000) != 0) {
             if (errno == ESTOP) {
-                return NULL;
+                return nullptr;
             }
         }
 
@@ -209,47 +268,32 @@ namespace melon::naming {
             consecutive_renew_error = 0;
             fiber_usleep(turbo::get_flag(FLAGS_sns_renew_interval_s) * 1000000);
         }
-        return NULL;
+        return nullptr;
     }
 
     int SnsNamingService::GetServers(const char *service_name,
                                      std::vector<ServerNode> *servers) {
-        if (service_name == NULL || *service_name == '\0' ||
-                turbo::get_flag(FLAGS_sns_env).empty() ||
-                turbo::get_flag(FLAGS_sns_status).empty() ||
-                turbo::get_flag(FLAGS_sns_zone).empty() ||
-                turbo::get_flag(FLAGS_sns_color).empty()) {
+        if (service_name == nullptr || *service_name == '\0') {
             LOG_FIRST_N(ERROR, 1) << "Invalid parameters";
             return -1;
         }
 
-        Channel *chan = GetOrNewSnsChannel();
-        if (NULL == chan) {
+        auto req = SnsNamingParams::get_instance()->get_service(service_name);
+        if (req == nullptr) {
+            LOG(ERROR) << "Service not found: " << service_name;
+            return -1;
+        }
+        Channel chan;
+        if(!make_sns_channel(&chan).ok()) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
-        Controller cntl;
-        melon::SnsService_Stub stub(chan);
-        melon::SnsResponse response;
-        melon::SnsRequest request;
-        request.set_app_name(service_name);
-        auto env_sp = mutil::StringSplitter(turbo::get_flag(FLAGS_sns_env), ',');
-        while (env_sp) {
-            request.add_env(env_sp.field());
-            ++env_sp;
-        }
-        auto color_sp = mutil::StringSplitter(turbo::get_flag(FLAGS_sns_color), ',');
-        while (color_sp) {
-            request.add_color(color_sp.field());
-            ++color_sp;
-        }
-        auto zone_sp = mutil::StringSplitter(turbo::get_flag(FLAGS_sns_zone), ',');
-        while (zone_sp) {
-            request.add_zones(zone_sp.field());
-            ++zone_sp;
-        }
 
-        stub.naming(&cntl, &request, &response, NULL);
+        Controller cntl;
+        melon::SnsService_Stub stub(&chan);
+        melon::SnsResponse response;
+
+        stub.naming(&cntl, req.get(), &response, nullptr);
         if (cntl.Failed()) {
             LOG(ERROR) << "Fail to register peer: " << cntl.ErrorText();
             return -1;
@@ -266,7 +310,7 @@ namespace melon::naming {
                 continue;
             }
             ServerNode node;
-            if(mutil::str2endpoint(peer.address().c_str(), &node.addr) != 0) {
+            if (mutil::str2endpoint(peer.address().c_str(), &node.addr) != 0) {
                 LOG(ERROR) << "Invalid address: " << peer.address();
                 continue;
             }

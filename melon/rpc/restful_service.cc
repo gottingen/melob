@@ -24,6 +24,7 @@
 #include <turbo/log/logging.h>
 #include <melon/utility/file_util.h>
 #include <turbo/strings/str_split.h>
+#include <melon/fiber/fiberpp.h>
 
 namespace melon {
 
@@ -48,40 +49,45 @@ namespace melon {
                                         ::google::protobuf::Closure *done) {
         (void) request;
         (void) response;
-        melon::ClosureGuard done_guard(done);
-        auto *ctrl = dynamic_cast<Controller *>(controller);
-        const RestfulRequest req(ctrl);
-        RestfulResponse resp(ctrl);
-        auto &path = req.unresolved_path();
-        if(path.empty()) {
-            if(root_processor_) {
-                root_processor_->process(&req, &resp);
+        auto func = [this, controller, done] {
+            melon::ClosureGuard done_guard(done);
+            auto *ctrl = dynamic_cast<Controller *>(controller);
+            const RestfulRequest req(ctrl);
+            RestfulResponse resp(ctrl);
+            auto &path = req.unresolved_path();
+            if (path.empty()) {
+                if (root_processor_) {
+                    root_processor_->process(&req, &resp);
+                    return;
+                }
+                if (any_path_processor_) {
+                    any_path_processor_->process(&req, &resp);
+                    return;
+                }
+                if (not_found_processor_) {
+                    not_found_processor_->process(&req, &resp);
+                    return;
+                }
+                LOG(FATAL) << "no processor found for path: /";
+            }
+            auto it = processors_.find(path);
+            if (it != processors_.end()) {
+                it->second->process(&req, &resp);
                 return;
             }
-            if(any_path_processor_) {
+            if (any_path_processor_) {
                 any_path_processor_->process(&req, &resp);
                 return;
             }
-            if(not_found_processor_) {
+            if (not_found_processor_) {
                 not_found_processor_->process(&req, &resp);
                 return;
             }
-            LOG(FATAL)<<"no processor found for path: /";
-        }
-        auto it = processors_.find(path);
-        if(it != processors_.end()) {
-            it->second->process(&req, &resp);
-            return;
-        }
-        if(any_path_processor_) {
-            any_path_processor_->process(&req, &resp);
-            return;
-        }
-        if(not_found_processor_) {
-            not_found_processor_->process(&req, &resp);
-            return;
-        }
-        LOG(FATAL)<<"no processor found for path: "<<path;
+            LOG(FATAL) << "no processor found for path: " << path;
+        };
+        melon::Fiber f;
+        f.run(std::move(func));
+        f.join();
     }
 
     turbo::Status RestfulService::register_server(Server *server) {
