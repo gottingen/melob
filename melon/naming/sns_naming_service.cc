@@ -271,7 +271,7 @@ namespace melon::naming {
             LOG(ERROR) << "Fail to renew peer: " << cntl.ErrorText();
             return -1;
         }
-        if(response.errcode() == melon::Errno::FailedPrecondition) {
+        if(response.errcode() == melon::Errno::PermissionDenied) {
             LOG(WARNING) << "Peer has been removed by manager, stop renew";
             _tombstone.store(true, std::memory_order_release);
             return 0;
