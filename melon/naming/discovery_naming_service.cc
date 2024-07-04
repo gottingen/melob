@@ -143,7 +143,7 @@ namespace melon::naming {
             : _th(INVALID_FIBER), _registered(false) {}
 
     DiscoveryClient::~DiscoveryClient() {
-        if (_registered.load(mutil::memory_order_acquire)) {
+        if (_registered.load(std::memory_order_acquire)) {
             fiber_stop(_th);
             fiber_join(_th, NULL);
             DoCancel();
@@ -243,8 +243,8 @@ namespace melon::naming {
     }
 
     int DiscoveryClient::Register(const DiscoveryRegisterParam &params) {
-        if (_registered.load(mutil::memory_order_relaxed) ||
-            _registered.exchange(true, mutil::memory_order_release)) {
+        if (_registered.load(std::memory_order_relaxed) ||
+            _registered.exchange(true, std::memory_order_release)) {
             return 0;
         }
         if (!params.IsValid()) {

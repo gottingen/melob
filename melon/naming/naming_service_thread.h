@@ -85,7 +85,7 @@ namespace melon {
         private:
             NamingServiceThread *_owner;
             fiber_session_t _wait_id;
-            mutil::atomic<bool> _has_wait_error;
+            std::atomic<bool> _has_wait_error;
             int _wait_error;
             std::vector<ServerNode> _last_servers;
             std::vector<ServerNode> _servers;

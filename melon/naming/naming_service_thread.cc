@@ -210,7 +210,7 @@ namespace melon {
     void NamingServiceThread::Actions::EndWait(int error_code) {
         if (fiber_session_trylock(_wait_id, NULL) == 0) {
             _wait_error = error_code;
-            _has_wait_error.store(true, mutil::memory_order_release);
+            _has_wait_error.store(true, std::memory_order_release);
             fiber_session_unlock_and_destroy(_wait_id);
         }
     }
@@ -218,7 +218,7 @@ namespace melon {
     int NamingServiceThread::Actions::WaitForFirstBatchOfServers() {
         // Wait can happen before signal in which case it returns non-zero,
         // so we ignore return value here and use `_wait_error' instead
-        if (!_has_wait_error.load(mutil::memory_order_acquire)) {
+        if (!_has_wait_error.load(std::memory_order_acquire)) {
             fiber_session_join(_wait_id);
         }
         return _wait_error;

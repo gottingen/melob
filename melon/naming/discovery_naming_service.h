@@ -68,7 +68,7 @@ namespace melon::naming {
 
     private:
         fiber_t _th;
-        mutil::atomic<bool> _registered;
+        std::atomic<bool> _registered;
         DiscoveryRegisterParam _params;
         mutil::EndPoint _current_discovery_server;
     };
