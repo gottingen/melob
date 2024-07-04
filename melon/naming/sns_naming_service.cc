@@ -230,7 +230,7 @@ namespace melon::naming {
 
     int SnsNamingClient::do_register() {
         auto chan = get_sns_channel();
-        if(chan) {
+        if(!chan) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
@@ -252,7 +252,7 @@ namespace melon::naming {
 
     int SnsNamingClient::do_renew() const {
         auto chan = get_sns_channel();
-        if(chan) {
+        if(!chan) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
@@ -276,7 +276,7 @@ namespace melon::naming {
 
     int SnsNamingClient::do_cancel() const {
         auto chan = get_sns_channel();
-        if(chan) {
+        if(!chan) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
@@ -341,7 +341,7 @@ namespace melon::naming {
             return -1;
         }
         auto chan = get_sns_channel();
-        if(chan) {
+        if(!chan) {
             LOG(ERROR) << "Fail to create discovery channel";
             return -1;
         }
