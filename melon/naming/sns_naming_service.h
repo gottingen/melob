@@ -36,6 +36,10 @@ namespace melon::naming {
 
         int register_peer(const melon::SnsPeer &req);
 
+        bool tombstone() const {
+            return _tombstone.load();
+        }
+
     private:
         static void *periodic_renew(void *arg);
 
@@ -48,6 +52,7 @@ namespace melon::naming {
     private:
         fiber_t _th;
         std::atomic<bool> _registered;
+        mutable std::atomic<bool> _tombstone{false};
         melon::SnsPeer _params;
         mutil::EndPoint _current_discovery_server;
 

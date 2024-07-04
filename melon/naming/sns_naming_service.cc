@@ -251,6 +251,10 @@ namespace melon::naming {
     }
 
     int SnsNamingClient::do_renew() const {
+        if(_tombstone.load(std::memory_order_acquire)) {
+            LOG_FIRST_N(WARNING, 1) << "Peer has been removed by manager, stop renew";
+            return 0;
+        }
         auto chan = get_sns_channel();
         if(!chan) {
             LOG(ERROR) << "Fail to create discovery channel";
@@ -264,11 +268,16 @@ namespace melon::naming {
         request.set_status(to_peer_status(turbo::get_flag(FLAGS_sns_status)));
         stub.update(&cntl, &request, &response, nullptr);
         if (cntl.Failed()) {
-            LOG(ERROR) << "Fail to register peer: " << cntl.ErrorText();
+            LOG(ERROR) << "Fail to renew peer: " << cntl.ErrorText();
             return -1;
         }
+        if(response.errcode() == melon::Errno::FailedPrecondition) {
+            LOG(WARNING) << "Peer has been removed by manager, stop renew";
+            _tombstone.store(true, std::memory_order_release);
+            return 0;
+        }
         if (response.errcode() != melon::Errno::OK) {
-            LOG(ERROR) << "Fail to register peer: " << response.errmsg();
+            LOG(ERROR) << "Fail to renew peer: " << response.errmsg();
             return -1;
         }
         return 0;
@@ -342,7 +351,7 @@ namespace melon::naming {
         }
         auto chan = get_sns_channel();
         if(!chan) {
-            LOG(ERROR) << "Fail to create discovery channel";
+            LOG(ERROR) << "Fail to create sns channel";
             return -1;
         }
 
@@ -352,11 +361,11 @@ namespace melon::naming {
 
         stub.naming(&cntl, req.get(), &response, nullptr);
         if (cntl.Failed()) {
-            LOG(ERROR) << "Fail to register peer: " << cntl.ErrorText();
+            LOG(ERROR) << "Fail to naming peer: " << cntl.ErrorText();
             return -1;
         }
         if (response.errcode() != melon::Errno::OK) {
-            LOG(ERROR) << "Fail to register peer: " << response.errmsg();
+            LOG(ERROR) << "Fail to naming peer: " << response.errmsg();
             return -1;
         }
 
