@@ -35,11 +35,15 @@ namespace fiber {
     static void validate_fiber_min_concurrency() noexcept;
     static bool validate_fiber_current_tag(std::string_view value, std::string *err) noexcept;
     static bool validate_fiber_concurrency_by_tag(std::string_view value, std::string *err) noexcept;
+    static  TaskControl *get_task_control();
 }  // namespace fiber
 TURBO_FLAG(int32_t, fiber_concurrency, 8 + FIBER_EPOLL_THREAD_NUM,
            "Number of pthread workers")
            .on_validate(turbo::GeValidator<int32_t, 8 + FIBER_EPOLL_THREAD_NUM>::validate)
            .on_update([]() noexcept {
+               if(!fiber::get_task_control()) {
+                   return;
+               }
                auto num = turbo::get_flag(FLAGS_fiber_concurrency);
                auto r = fiber_setconcurrency(num);
                 if (r != 0) {
