@@ -112,8 +112,12 @@ namespace melon::naming {
     }
 
     void update_sns_channel() {
+        auto list_servers = turbo::get_flag(FLAGS_sns_server);
+        if (list_servers.empty()) {
+            return;
+        }
         auto channel = std::make_shared<Channel>();
-        if (!makeup_sns_channel(channel.get(), turbo::get_flag(FLAGS_sns_server)).ok()) {
+        if (!makeup_sns_channel(channel.get(), list_servers).ok()) {
             LOG(ERROR) << "Fail to create sns channel";
             return;
         }
