@@ -21,7 +21,7 @@
 #ifndef  MELON_FIBER_EXECUTION_QUEUE_INL_H_
 #define  MELON_FIBER_EXECUTION_QUEUE_INL_H_
 
-#include <melon/utility/atomicops.h>             // mutil::atomic
+#include <atomic>
 #include <melon/utility/macros.h>                // MELON_CACHELINE_ALIGNMENT
 #include <melon/utility/memory/scoped_ptr.h>     // mutil::scoped_ptr
 #include <turbo/log/logging.h>               // LOG
@@ -171,15 +171,15 @@ public:
         , _pthread_started(false)
         , _cond(&_mutex)
         , _current_head(NULL) {
-        _join_butex = butex_create_checked<mutil::atomic<int> >();
-        _join_butex->store(0, mutil::memory_order_relaxed);
+        _join_butex = butex_create_checked<std::atomic<int> >();
+        _join_butex->store(0, std::memory_order_relaxed);
     }
 
     ~ExecutionQueueBase() {
         butex_destroy(_join_butex);
     }
 
-    bool stopped() const { return _stopped.load(mutil::memory_order_acquire); }
+    bool stopped() const { return _stopped.load(std::memory_order_acquire); }
     int stop();
     static int join(uint64_t id);
 protected:
@@ -226,17 +226,17 @@ private:
 
     // Don't change the order of _head, _versioned_ref and _stopped unless you 
     // see improvement of performance in test
-    MELON_CACHELINE_ALIGNMENT mutil::atomic<TaskNode*> _head;
-    MELON_CACHELINE_ALIGNMENT mutil::atomic<uint64_t> _versioned_ref;
-    MELON_CACHELINE_ALIGNMENT mutil::atomic<bool> _stopped;
-    mutil::atomic<int64_t> _high_priority_tasks;
+    MELON_CACHELINE_ALIGNMENT std::atomic<TaskNode*> _head;
+    MELON_CACHELINE_ALIGNMENT std::atomic<uint64_t> _versioned_ref;
+    MELON_CACHELINE_ALIGNMENT std::atomic<bool> _stopped;
+    std::atomic<int64_t> _high_priority_tasks;
     uint64_t _this_id;
     void* _meta;
     void* _type_specific_function;
     execute_func_t _execute_func;
     clear_task_mem _clear_func;
     ExecutionQueueOptions _options;
-    mutil::atomic<int>* _join_butex;
+    std::atomic<int>* _join_butex;
 
     // For pthread mode.
     pthread_t _pid;
@@ -492,7 +492,7 @@ inline bool ExecutionQueueBase::_more_tasks(
         return_when_no_more = true;
     }
     if (_head.compare_exchange_strong(
-                new_head, desired, mutil::memory_order_acquire)) {
+                new_head, desired, std::memory_order_acquire)) {
         // No one added new tasks.
         return return_when_no_more;
     }
@@ -526,7 +526,7 @@ inline bool ExecutionQueueBase::_more_tasks(
 
 inline int ExecutionQueueBase::dereference() {
     const uint64_t vref = _versioned_ref.fetch_sub(
-            1, mutil::memory_order_release);
+            1, std::memory_order_release);
     const int32_t nref = _ref_of_vref(vref);
     // We need make the fast path as fast as possible, don't put any extra
     // code before this point
@@ -564,8 +564,8 @@ inline int ExecutionQueueBase::dereference() {
             uint64_t expected_vref = vref - 1;
             if (_versioned_ref.compare_exchange_strong(
                         expected_vref, _make_vref(id_ver + 2, 0),
-                        mutil::memory_order_acquire,
-                        mutil::memory_order_relaxed)) {
+                        std::memory_order_acquire,
+                        std::memory_order_relaxed)) {
                 _on_recycle();
                 // We don't return m immediately when the reference count
                 // reaches 0 as there might be in processing tasks. Instead

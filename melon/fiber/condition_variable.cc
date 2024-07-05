@@ -17,15 +17,15 @@
 //
 //
 
-#include <melon/utility/atomicops.h>
+#include <atomic>
 #include <melon/utility/macros.h>                         // MELON_CASSERT
 #include <melon/fiber/butex.h>                       // butex_*
 #include <melon/fiber/types.h>                       // fiber_cond_t
 
 namespace fiber {
 struct CondInternal {
-    mutil::atomic<fiber_mutex_t*> m;
-    mutil::atomic<int>* seq;
+    std::atomic<fiber_mutex_t*> m;
+    std::atomic<int>* seq;
 };
 
 MELON_CASSERT(sizeof(CondInternal) == sizeof(fiber_cond_t),
@@ -60,8 +60,8 @@ int fiber_cond_signal(fiber_cond_t* c) {
     fiber::CondInternal* ic = reinterpret_cast<fiber::CondInternal*>(c);
     // ic is probably dereferenced after fetch_add, save required fields before
     // this point
-    mutil::atomic<int>* const saved_seq = ic->seq;
-    saved_seq->fetch_add(1, mutil::memory_order_release);
+    std::atomic<int>* const saved_seq = ic->seq;
+    saved_seq->fetch_add(1, std::memory_order_release);
     // don't touch ic any more
     fiber::butex_wake(saved_seq);
     return 0;
@@ -69,14 +69,14 @@ int fiber_cond_signal(fiber_cond_t* c) {
 
 int fiber_cond_broadcast(fiber_cond_t* c) {
     fiber::CondInternal* ic = reinterpret_cast<fiber::CondInternal*>(c);
-    fiber_mutex_t* m = ic->m.load(mutil::memory_order_relaxed);
-    mutil::atomic<int>* const saved_seq = ic->seq;
+    fiber_mutex_t* m = ic->m.load(std::memory_order_relaxed);
+    std::atomic<int>* const saved_seq = ic->seq;
     if (!m) {
         return 0;
     }
     void* const saved_butex = m->butex;
     // Wakeup one thread and requeue the rest on the mutex.
-    ic->seq->fetch_add(1, mutil::memory_order_release);
+    ic->seq->fetch_add(1, std::memory_order_release);
     fiber::butex_requeue(saved_seq, saved_butex);
     return 0;
 }
@@ -84,12 +84,12 @@ int fiber_cond_broadcast(fiber_cond_t* c) {
 int fiber_cond_wait(fiber_cond_t* __restrict c,
                       fiber_mutex_t* __restrict m) {
     fiber::CondInternal* ic = reinterpret_cast<fiber::CondInternal*>(c);
-    const int expected_seq = ic->seq->load(mutil::memory_order_relaxed);
-    if (ic->m.load(mutil::memory_order_relaxed) != m) {
+    const int expected_seq = ic->seq->load(std::memory_order_relaxed);
+    if (ic->m.load(std::memory_order_relaxed) != m) {
         // bind m to c
         fiber_mutex_t* expected_m = NULL;
         if (!ic->m.compare_exchange_strong(
-                expected_m, m, mutil::memory_order_relaxed)) {
+                expected_m, m, std::memory_order_relaxed)) {
             return EINVAL;
         }
     }
@@ -118,12 +118,12 @@ int fiber_cond_timedwait(fiber_cond_t* __restrict c,
                            fiber_mutex_t* __restrict m,
                            const struct timespec* __restrict abstime) {
     fiber::CondInternal* ic = reinterpret_cast<fiber::CondInternal*>(c);
-    const int expected_seq = ic->seq->load(mutil::memory_order_relaxed);
-    if (ic->m.load(mutil::memory_order_relaxed) != m) {
+    const int expected_seq = ic->seq->load(std::memory_order_relaxed);
+    if (ic->m.load(std::memory_order_relaxed) != m) {
         // bind m to c
         fiber_mutex_t* expected_m = NULL;
         if (!ic->m.compare_exchange_strong(
-                expected_m, m, mutil::memory_order_relaxed)) {
+                expected_m, m, std::memory_order_relaxed)) {
             return EINVAL;
         }
     }

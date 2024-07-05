@@ -31,7 +31,7 @@
 #include <vector>
 #include <array>
 #include <memory>
-#include <melon/utility/atomicops.h>                     // mutil::atomic
+#include <atomic>
 #include <melon/var/var.h>                          // melon::var::PassiveStatus
 #include <melon/fiber/task_meta.h>                  // TaskMeta
 #include <melon/utility/resource_pool.h>                 // ResourcePool
@@ -67,9 +67,9 @@ namespace fiber {
         void stop_and_join();
 
         // Get # of worker threads.
-        int concurrency() const { return _concurrency.load(mutil::memory_order_acquire); }
+        int concurrency() const { return _concurrency.load(std::memory_order_acquire); }
 
-        int concurrency(fiber_tag_t tag) const { return _tagged_ngroup[tag].load(mutil::memory_order_acquire); }
+        int concurrency(fiber_tag_t tag) const { return _tagged_ngroup[tag].load(std::memory_order_acquire); }
 
         void print_rq_sizes(std::ostream &os);
 
@@ -104,7 +104,7 @@ namespace fiber {
         TaggedGroups &tag_group(fiber_tag_t tag) { return _tagged_groups[tag]; }
 
         // Tag ngroup
-        mutil::atomic<size_t> &tag_ngroup(int tag) { return _tagged_ngroup[tag]; }
+        std::atomic<size_t> &tag_ngroup(int tag) { return _tagged_ngroup[tag]; }
 
         // Tag parking slot
         TaggedParkingLot &tag_pl(fiber_tag_t tag) { return _pl[tag]; }
@@ -124,19 +124,19 @@ namespace fiber {
 
         melon::var::Adder<int64_t> &tag_nfibers(fiber_tag_t tag);
 
-        std::vector<mutil::atomic<size_t>> _tagged_ngroup;
+        std::vector<std::atomic<size_t>> _tagged_ngroup;
         std::vector<TaggedGroups> _tagged_groups;
         mutil::Mutex _modify_group_mutex;
 
-        mutil::atomic<bool> _init;  // if not init, var will case coredump
+        std::atomic<bool> _init;  // if not init, var will case coredump
         bool _stop;
-        mutil::atomic<int> _concurrency;
+        std::atomic<int> _concurrency;
         std::vector<pthread_t> _workers;
-        mutil::atomic<int> _next_worker_id;
+        std::atomic<int> _next_worker_id;
 
         melon::var::Adder<int64_t> _nworkers;
         mutil::Mutex _pending_time_mutex;
-        mutil::atomic<melon::var::LatencyRecorder *> _pending_time;
+        std::atomic<melon::var::LatencyRecorder *> _pending_time;
         melon::var::PassiveStatus<double> _cumulated_worker_time;
         melon::var::PerSecond<melon::var::PassiveStatus<double> > _worker_usage_second;
         melon::var::PassiveStatus<int64_t> _cumulated_switch_count;
@@ -155,7 +155,7 @@ namespace fiber {
     };
 
     inline melon::var::LatencyRecorder &TaskControl::exposed_pending_time() {
-        melon::var::LatencyRecorder *pt = _pending_time.load(mutil::memory_order_consume);
+        melon::var::LatencyRecorder *pt = _pending_time.load(std::memory_order_consume);
         if (!pt) {
             pt = create_exposed_pending_time();
         }
@@ -172,11 +172,11 @@ namespace fiber {
 
     template<typename F>
     inline void TaskControl::for_each_task_group(F const &f) {
-        if (_init.load(mutil::memory_order_acquire) == false) {
+        if (_init.load(std::memory_order_acquire) == false) {
             return;
         }
         for (size_t i = 0; i < _tagged_groups.size(); ++i) {
-            auto ngroup = tag_ngroup(i).load(mutil::memory_order_relaxed);
+            auto ngroup = tag_ngroup(i).load(std::memory_order_relaxed);
             auto &groups = tag_group(i);
             for (size_t j = 0; j < ngroup; ++j) {
                 f(groups[j]);

@@ -22,7 +22,7 @@
 #include <execinfo.h>
 #include <dlfcn.h>                               // dlsym
 #include <fcntl.h>                               // O_RDONLY
-#include <melon/utility/atomicops.h>
+#include <atomic>
 #include <melon/var/var.h>
 #include <melon/var/collector.h>
 #include <melon/utility/macros.h>                         // MELON_CASSERT
@@ -284,7 +284,7 @@ static pthread_mutex_t g_cp_mutex = PTHREAD_MUTEX_INITIALIZER;
 const size_t MUTEX_MAP_SIZE = 1024;
 MELON_CASSERT((MUTEX_MAP_SIZE & (MUTEX_MAP_SIZE - 1)) == 0, must_be_power_of_2);
 struct MELON_CACHELINE_ALIGNMENT MutexMapEntry {
-    mutil::static_atomic<uint64_t> versioned_mutex;
+    std::atomic<uint64_t> versioned_mutex;
     fiber_contention_site_t csite;
 };
 static MutexMapEntry g_mutex_map[MUTEX_MAP_SIZE] = {}; // zero-initialize
@@ -309,9 +309,9 @@ void SampledContention::destroy() {
 }
 
 // Remember the conflict hashes for troubleshooting, should be 0 at most of time.
-static mutil::static_atomic<int64_t> g_nconflicthash = MUTIL_STATIC_ATOMIC_INIT(0);
+static std::atomic<int64_t> g_nconflicthash = MUTIL_STATIC_ATOMIC_INIT(0);
 static int64_t get_nconflicthash(void*) {
-    return g_nconflicthash.load(mutil::memory_order_relaxed);
+    return g_nconflicthash.load(std::memory_order_relaxed);
 }
 
 // Start profiling contention.
@@ -484,26 +484,26 @@ const int PTR_BITS = 48;
 inline fiber_contention_site_t*
 add_pthread_contention_site(pthread_mutex_t* mutex) {
     MutexMapEntry& entry = g_mutex_map[hash_mutex_ptr(mutex) & (MUTEX_MAP_SIZE - 1)];
-    mutil::static_atomic<uint64_t>& m = entry.versioned_mutex;
-    uint64_t expected = m.load(mutil::memory_order_relaxed);
+    std::atomic<uint64_t>& m = entry.versioned_mutex;
+    uint64_t expected = m.load(std::memory_order_relaxed);
     // If the entry is not used or used by previous profiler, try to CAS it.
     if (expected == 0 ||
         (expected >> PTR_BITS) != (g_cp_version & ((1 << (64 - PTR_BITS)) - 1))) {
         uint64_t desired = (g_cp_version << PTR_BITS) | (uint64_t)mutex;
         if (m.compare_exchange_strong(
-                expected, desired, mutil::memory_order_acquire)) {
+                expected, desired, std::memory_order_acquire)) {
             return &entry.csite;
         }
     }
-    g_nconflicthash.fetch_add(1, mutil::memory_order_relaxed);
+    g_nconflicthash.fetch_add(1, std::memory_order_relaxed);
     return NULL;
 }
 
 inline bool remove_pthread_contention_site(
     pthread_mutex_t* mutex, fiber_contention_site_t* saved_csite) {
     MutexMapEntry& entry = g_mutex_map[hash_mutex_ptr(mutex) & (MUTEX_MAP_SIZE - 1)];
-    mutil::static_atomic<uint64_t>& m = entry.versioned_mutex;
-    if ((m.load(mutil::memory_order_relaxed) & ((((uint64_t)1) << PTR_BITS) - 1))
+    std::atomic<uint64_t>& m = entry.versioned_mutex;
+    if ((m.load(std::memory_order_relaxed) & ((((uint64_t)1) << PTR_BITS) - 1))
         != (uint64_t)mutex) {
         // This branch should be the most common case since most locks are
         // neither contended nor sampled. We have one memory indirection and
@@ -516,7 +516,7 @@ inline bool remove_pthread_contention_site(
     // makes profiling result less accurate.
     *saved_csite = entry.csite;
     make_contention_site_invalid(&entry.csite);
-    m.store(0, mutil::memory_order_release);
+    m.store(0, std::memory_order_release);
     return true;
 }
 
@@ -633,8 +633,8 @@ MUTIL_FORCE_INLINE int pthread_mutex_unlock_impl(pthread_mutex_t* mutex) {
 
 // Implement fiber_mutex_t related functions
 struct MutexInternal {
-    mutil::static_atomic<unsigned char> locked;
-    mutil::static_atomic<unsigned char> contended;
+    std::atomic<unsigned char> locked;
+    std::atomic<unsigned char> contended;
     unsigned short padding;
 };
 
@@ -649,7 +649,7 @@ MELON_CASSERT(sizeof(unsigned) == sizeof(MutexInternal),
               sizeof_mutex_internal_must_equal_unsigned);
 
 inline int mutex_lock_contended(fiber_mutex_t* m) {
-    mutil::atomic<unsigned>* whole = (mutil::atomic<unsigned>*)m->butex;
+    std::atomic<unsigned>* whole = (std::atomic<unsigned>*)m->butex;
     while (whole->exchange(FIBER_MUTEX_CONTENDED) & FIBER_MUTEX_LOCKED) {
         if (fiber::butex_wait(whole, FIBER_MUTEX_CONTENDED, NULL) < 0 &&
             errno != EWOULDBLOCK && errno != EINTR/*note*/) {
@@ -663,7 +663,7 @@ inline int mutex_lock_contended(fiber_mutex_t* m) {
 
 inline int mutex_timedlock_contended(
     fiber_mutex_t* m, const struct timespec* __restrict abstime) {
-    mutil::atomic<unsigned>* whole = (mutil::atomic<unsigned>*)m->butex;
+    std::atomic<unsigned>* whole = (std::atomic<unsigned>*)m->butex;
     while (whole->exchange(FIBER_MUTEX_CONTENDED) & FIBER_MUTEX_LOCKED) {
         if (fiber::butex_wait(whole, FIBER_MUTEX_CONTENDED, abstime) < 0 &&
             errno != EWOULDBLOCK && errno != EINTR/*note*/) {
@@ -679,7 +679,7 @@ inline int mutex_timedlock_contended(
 namespace internal {
 
 int FastPthreadMutex::lock_contended() {
-    mutil::atomic<unsigned>* whole = (mutil::atomic<unsigned>*)&_futex;
+    std::atomic<unsigned>* whole = (std::atomic<unsigned>*)&_futex;
     while (whole->exchange(FIBER_MUTEX_CONTENDED) & FIBER_MUTEX_LOCKED) {
         if (futex_wait_private(whole, FIBER_MUTEX_CONTENDED, NULL) < 0
             && errno != EWOULDBLOCK) {
@@ -691,19 +691,19 @@ int FastPthreadMutex::lock_contended() {
 
 void FastPthreadMutex::lock() {
     fiber::MutexInternal* split = (fiber::MutexInternal*)&_futex;
-    if (split->locked.exchange(1, mutil::memory_order_acquire)) {
+    if (split->locked.exchange(1, std::memory_order_acquire)) {
         (void)lock_contended();
     }
 }
 
 bool FastPthreadMutex::try_lock() {
     fiber::MutexInternal* split = (fiber::MutexInternal*)&_futex;
-    return !split->locked.exchange(1, mutil::memory_order_acquire);
+    return !split->locked.exchange(1, std::memory_order_acquire);
 }
 
 void FastPthreadMutex::unlock() {
-    mutil::atomic<unsigned>* whole = (mutil::atomic<unsigned>*)&_futex;
-    const unsigned prev = whole->exchange(0, mutil::memory_order_release);
+    std::atomic<unsigned>* whole = (std::atomic<unsigned>*)&_futex;
+    const unsigned prev = whole->exchange(0, std::memory_order_release);
     // CAUTION: the mutex may be destroyed, check comments before butex_create
     if (prev != FIBER_MUTEX_LOCKED) {
         futex_wake_private(whole, 1);
@@ -735,7 +735,7 @@ int fiber_mutex_destroy(fiber_mutex_t* m) {
 
 int fiber_mutex_trylock(fiber_mutex_t* m) {
     fiber::MutexInternal* split = (fiber::MutexInternal*)m->butex;
-    if (!split->locked.exchange(1, mutil::memory_order_acquire)) {
+    if (!split->locked.exchange(1, std::memory_order_acquire)) {
         return 0;
     }
     return EBUSY;
@@ -747,7 +747,7 @@ int fiber_mutex_lock_contended(fiber_mutex_t* m) {
 
 int fiber_mutex_lock(fiber_mutex_t* m) {
     fiber::MutexInternal* split = (fiber::MutexInternal*)m->butex;
-    if (!split->locked.exchange(1, mutil::memory_order_acquire)) {
+    if (!split->locked.exchange(1, std::memory_order_acquire)) {
         return 0;
     }
     // Don't sample when contention profiler is off.
@@ -774,7 +774,7 @@ int fiber_mutex_lock(fiber_mutex_t* m) {
 int fiber_mutex_timedlock(fiber_mutex_t* __restrict m,
                             const struct timespec* __restrict abstime) {
     fiber::MutexInternal* split = (fiber::MutexInternal*)m->butex;
-    if (!split->locked.exchange(1, mutil::memory_order_acquire)) {
+    if (!split->locked.exchange(1, std::memory_order_acquire)) {
         return 0;
     }
     // Don't sample when contention profiler is off.
@@ -804,13 +804,13 @@ int fiber_mutex_timedlock(fiber_mutex_t* __restrict m,
 }
 
 int fiber_mutex_unlock(fiber_mutex_t* m) {
-    mutil::atomic<unsigned>* whole = (mutil::atomic<unsigned>*)m->butex;
+    std::atomic<unsigned>* whole = (std::atomic<unsigned>*)m->butex;
     fiber_contention_site_t saved_csite = {0, 0};
     if (fiber::is_contention_site_valid(m->csite)) {
         saved_csite = m->csite;
         fiber::make_contention_site_invalid(&m->csite);
     }
-    const unsigned prev = whole->exchange(0, mutil::memory_order_release);
+    const unsigned prev = whole->exchange(0, std::memory_order_release);
     // CAUTION: the mutex may be destroyed, check comments before butex_create
     if (prev == FIBER_MUTEX_LOCKED) {
         return 0;

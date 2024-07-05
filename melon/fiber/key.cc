@@ -20,7 +20,7 @@
 
 #include <pthread.h>
 #include <melon/utility/macros.h>
-#include <melon/utility/atomicops.h>
+#include <atomic>
 #include <melon/var/passive_status.h>
 #include <melon/fiber/errno.h>                       // EAGAIN
 #include <melon/fiber/task_group.h>                  // TaskGroup
@@ -70,8 +70,8 @@ namespace fiber {
     static uint32_t s_free_keys[KEYS_MAX];
 
     // Stats.
-    static mutil::static_atomic<size_t> nkeytable = MUTIL_STATIC_ATOMIC_INIT(0);
-    static mutil::static_atomic<size_t> nsubkeytable = MUTIL_STATIC_ATOMIC_INIT(0);
+    static std::atomic<size_t> nkeytable = MUTIL_STATIC_ATOMIC_INIT(0);
+    static std::atomic<size_t> nsubkeytable = MUTIL_STATIC_ATOMIC_INIT(0);
 
     // The second-level array.
     // Align with cacheline to avoid false sharing.
@@ -79,12 +79,12 @@ namespace fiber {
     public:
         SubKeyTable() {
             memset(_data, 0, sizeof(_data));
-            nsubkeytable.fetch_add(1, mutil::memory_order_relaxed);
+            nsubkeytable.fetch_add(1, std::memory_order_relaxed);
         }
 
         // NOTE: Call clear first.
         ~SubKeyTable() {
-            nsubkeytable.fetch_sub(1, mutil::memory_order_relaxed);
+            nsubkeytable.fetch_sub(1, std::memory_order_relaxed);
         }
 
         void clear(uint32_t offset) {
@@ -140,11 +140,11 @@ namespace fiber {
     public:
         KeyTable() : next(NULL) {
             memset(_subs, 0, sizeof(_subs));
-            nkeytable.fetch_add(1, mutil::memory_order_relaxed);
+            nkeytable.fetch_add(1, std::memory_order_relaxed);
         }
 
         ~KeyTable() {
-            nkeytable.fetch_sub(1, mutil::memory_order_relaxed);
+            nkeytable.fetch_sub(1, std::memory_order_relaxed);
             for (int ntry = 0; ntry < PTHREAD_DESTRUCTOR_ITERATIONS; ++ntry) {
                 for (uint32_t i = 0; i < KEY_1STLEVEL_SIZE; ++i) {
                     if (_subs[i]) {
@@ -258,12 +258,12 @@ namespace fiber {
     }
 
     static size_t get_keytable_count(void *) {
-        return nkeytable.load(mutil::memory_order_relaxed);
+        return nkeytable.load(std::memory_order_relaxed);
     }
 
     static size_t get_keytable_memory(void *) {
-        const size_t n = nkeytable.load(mutil::memory_order_relaxed);
-        const size_t nsub = nsubkeytable.load(mutil::memory_order_relaxed);
+        const size_t n = nkeytable.load(std::memory_order_relaxed);
+        const size_t nsub = nsubkeytable.load(std::memory_order_relaxed);
         return n * sizeof(KeyTable) + nsub * sizeof(SubKeyTable);
     }
 

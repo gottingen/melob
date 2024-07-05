@@ -18,7 +18,7 @@
 //
 
 
-#include <melon/utility/atomicops.h>     // mutil::atomic<int>
+#include <atomic>
 #include <melon/fiber/butex.h>
 #include <melon/fiber/countdown_event.h>
 
@@ -41,8 +41,8 @@ namespace fiber {
         // Have to save _butex, *this is probably defreferenced by the wait thread
         // which sees fetch_sub
         void *const saved_butex = _butex;
-        const int prev = ((mutil::atomic<int> *) _butex)
-                ->fetch_sub(sig, mutil::memory_order_release);
+        const int prev = ((std::atomic<int> *) _butex)
+                ->fetch_sub(sig, std::memory_order_release);
         // DON'T touch *this ever after
         if (prev > sig) {
             return;
@@ -55,7 +55,7 @@ namespace fiber {
         _wait_was_invoked = true;
         for (;;) {
             const int seen_counter =
-                    ((mutil::atomic<int> *) _butex)->load(mutil::memory_order_acquire);
+                    ((std::atomic<int> *) _butex)->load(std::memory_order_acquire);
             if (seen_counter <= 0) {
                 return 0;
             }
@@ -73,7 +73,7 @@ namespace fiber {
         }
         LOG_IF(ERROR, _wait_was_invoked)
         << "Invoking add_count() after wait() was invoked";
-        ((mutil::atomic<int> *) _butex)->fetch_add(v, mutil::memory_order_release);
+        ((std::atomic<int> *) _butex)->fetch_add(v, std::memory_order_release);
     }
 
     void CountdownEvent::reset(int v) {
@@ -82,8 +82,8 @@ namespace fiber {
             return;
         }
         const int prev_counter =
-                ((mutil::atomic<int> *) _butex)
-                        ->exchange(v, mutil::memory_order_release);
+                ((std::atomic<int> *) _butex)
+                        ->exchange(v, std::memory_order_release);
         LOG_IF(ERROR, _wait_was_invoked && prev_counter)
         << "Invoking reset() while count=" << prev_counter;
         _wait_was_invoked = false;
@@ -93,7 +93,7 @@ namespace fiber {
         _wait_was_invoked = true;
         for (;;) {
             const int seen_counter =
-                    ((mutil::atomic<int> *) _butex)->load(mutil::memory_order_acquire);
+                    ((std::atomic<int> *) _butex)->load(std::memory_order_acquire);
             if (seen_counter <= 0) {
                 return 0;
             }

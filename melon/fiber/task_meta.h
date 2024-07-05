@@ -23,7 +23,7 @@
 
 #include <pthread.h>                 // pthread_spin_init
 #include <melon/fiber/butex.h>           // butex_construct/destruct
-#include <melon/utility/atomicops.h>          // mutil::atomic
+#include <atomic>          // std::atomic
 #include <melon/fiber/types.h>           // fiber_attr_t
 #include <melon/fiber/stack.h>           // ContextualStack
 
@@ -49,7 +49,7 @@ const static LocalStorage LOCAL_STORAGE_INIT = FIBER_LOCAL_STORAGE_INITIALIZER;
 
 struct TaskMeta {
     // [Not Reset]
-    mutil::atomic<ButexWaiter*> current_waiter;
+    std::atomic<ButexWaiter*> current_waiter;
     uint64_t current_sleep;
 
     // A builtin flag to mark if the thread is stopping.

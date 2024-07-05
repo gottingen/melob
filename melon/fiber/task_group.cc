@@ -349,7 +349,7 @@ namespace fiber {
         if (__builtin_expect(!m, 0)) {
             return ENOMEM;
         }
-        CHECK(m->current_waiter.load(mutil::memory_order_relaxed) == NULL);
+        CHECK(m->current_waiter.load(std::memory_order_relaxed) == NULL);
         m->stop = false;
         m->interrupted = false;
         m->about_to_quit = false;
@@ -408,7 +408,7 @@ namespace fiber {
         if (__builtin_expect(!m, 0)) {
             return ENOMEM;
         }
-        CHECK(m->current_waiter.load(mutil::memory_order_relaxed) == NULL);
+        CHECK(m->current_waiter.load(std::memory_order_relaxed) == NULL);
         m->stop = false;
         m->interrupted = false;
         m->about_to_quit = false;
@@ -812,7 +812,7 @@ namespace fiber {
         const uint32_t given_ver = get_version(tid);
         MELON_SCOPED_LOCK(m->version_lock);
         if (given_ver == *m->version_butex) {
-            *pw = m->current_waiter.exchange(NULL, mutil::memory_order_acquire);
+            *pw = m->current_waiter.exchange(NULL, std::memory_order_acquire);
             *sleep_id = m->current_sleep;
             m->current_sleep = 0;  // only one stopper gets the sleep_id
             m->interrupted = true;
@@ -828,7 +828,7 @@ namespace fiber {
             MELON_SCOPED_LOCK(m->version_lock);
             if (given_ver == *m->version_butex) {
                 // Release fence makes m->interrupted visible to butex_wait
-                m->current_waiter.store(w, mutil::memory_order_release);
+                m->current_waiter.store(w, std::memory_order_release);
                 return 0;
             }
         }

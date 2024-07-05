@@ -18,8 +18,7 @@
 //
 
 
-#ifndef MELON_FIBER_COUNTDOWN_EVENT_H_
-#define MELON_FIBER_COUNTDOWN_EVENT_H_
+#pragma once
 
 #include <melon/fiber/fiber.h>
 
@@ -58,5 +57,3 @@ namespace fiber {
     };
 
 }  // namespace fiber
-
-#endif  // MELON_FIBER_COUNTDOWN_EVENT_H_

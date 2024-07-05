@@ -18,7 +18,7 @@
 //
 
 
-#include <melon/utility/atomicops.h>                // mutil::atomic
+#include <atomic>
 #include <melon/utility/scoped_lock.h>              // MELON_SCOPED_LOCK
 #include <melon/utility/macros.h>
 #include <melon/utility/containers/linked_list.h>   // LinkNode
@@ -89,7 +89,7 @@ namespace fiber {
 
         // Erasing node from middle of LinkedList is thread-unsafe, we need
         // to hold its container's lock.
-        mutil::atomic<Butex *> container;
+        std::atomic<Butex *> container;
     };
 
     // non_pthread_task allocates this structure on stack and queue it in
@@ -107,7 +107,7 @@ namespace fiber {
 // pthread_task or main_task allocates this structure on stack and queue it
 // in Butex::waiters.
     struct ButexPthreadWaiter : public ButexWaiter {
-        mutil::atomic<int> sig;
+        std::atomic<int> sig;
     };
 
     typedef mutil::LinkedList<ButexWaiter> ButexWaiterList;
@@ -121,7 +121,7 @@ namespace fiber {
 
         ~Butex() {}
 
-        mutil::atomic<int> value;
+        std::atomic<int> value;
         ButexWaiterList waiters;
         internal::FastPthreadMutex waiter_lock;
     };
@@ -131,7 +131,7 @@ namespace fiber {
 
     static void wakeup_pthread(ButexPthreadWaiter *pw) {
         // release fence makes wait_pthread see changes before wakeup.
-        pw->sig.store(PTHREAD_SIGNALLED, mutil::memory_order_release);
+        pw->sig.store(PTHREAD_SIGNALLED, std::memory_order_release);
         // At this point, wait_pthread() possibly has woken up and destroyed `pw'.
         // In which case, futex_wake_private() should return EFAULT.
         // If crash happens in future, `pw' can be made TLS and never destroyed
@@ -142,20 +142,20 @@ namespace fiber {
     bool erase_from_butex(ButexWaiter *, bool, WaiterState);
 
     int wait_pthread(ButexPthreadWaiter &pw, const timespec *abstime) {
-        timespec *ptimeout = NULL;
+        timespec *ptimeout = nullptr;
         timespec timeout;
         int64_t timeout_us = 0;
         int rc;
 
         while (true) {
-            if (abstime != NULL) {
+            if (abstime != nullptr) {
                 timeout_us = mutil::timespec_to_microseconds(*abstime) - mutil::gettimeofday_us();
                 timeout = mutil::microseconds_to_timespec(timeout_us);
                 ptimeout = &timeout;
             }
-            if (timeout_us > MIN_SLEEP_US || abstime == NULL) {
+            if (timeout_us > MIN_SLEEP_US || abstime == nullptr) {
                 rc = futex_wait_private(&pw.sig, PTHREAD_NOT_SIGNALLED, ptimeout);
-                if (PTHREAD_NOT_SIGNALLED != pw.sig.load(mutil::memory_order_acquire)) {
+                if (PTHREAD_NOT_SIGNALLED != pw.sig.load(std::memory_order_acquire)) {
                     // If `sig' is changed, wakeup_pthread() must be called and `pw'
                     // is already removed from the butex.
                     // Acquire fence makes this thread sees changes before wakeup.
@@ -172,10 +172,10 @@ namespace fiber {
                 if (!erase_from_butex(&pw, false, WAITER_STATE_TIMEDOUT)) {
                     // Another thread is erasing `pw' as well, wait for the signal.
                     // Acquire fence makes this thread sees changes before wakeup.
-                    if (pw.sig.load(mutil::memory_order_acquire) == PTHREAD_NOT_SIGNALLED) {
+                    if (pw.sig.load(std::memory_order_acquire) == PTHREAD_NOT_SIGNALLED) {
                         // already timedout, abstime and ptimeout are expired.
-                        abstime = NULL;
-                        ptimeout = NULL;
+                        abstime = nullptr;
+                        ptimeout = nullptr;
                         continue;
                     }
                 }
@@ -264,7 +264,7 @@ namespace fiber {
         if (b) {
             return &b->value;
         }
-        return NULL;
+        return nullptr;
     }
 
     void butex_destroy(void *butex) {
@@ -272,14 +272,14 @@ namespace fiber {
             return;
         }
         Butex *b = static_cast<Butex *>(
-                container_of(static_cast<mutil::atomic<int> *>(butex), Butex, value));
+                container_of(static_cast<std::atomic<int> *>(butex), Butex, value));
         mutil::return_object(b);
     }
 
     inline TaskGroup *get_task_group(TaskControl *c, bool nosignal = false) {
         TaskGroup *g = tls_task_group;
         if (nosignal) {
-            if (NULL == tls_task_group_nosignal) {
+            if (nullptr == tls_task_group_nosignal) {
                 g = g ? g : c->choose_one_group();
                 tls_task_group_nosignal = g;
             } else {
@@ -300,8 +300,8 @@ namespace fiber {
     }
 
     int butex_wake(void *arg, bool nosignal) {
-        Butex *b = container_of(static_cast<mutil::atomic<int> *>(arg), Butex, value);
-        ButexWaiter *front = NULL;
+        Butex *b = container_of(static_cast<std::atomic<int> *>(arg), Butex, value);
+        ButexWaiter *front = nullptr;
         {
             MELON_SCOPED_LOCK(b->waiter_lock);
             if (b->waiters.empty()) {
@@ -309,7 +309,7 @@ namespace fiber {
             }
             front = b->waiters.head()->value();
             front->RemoveFromList();
-            front->container.store(NULL, mutil::memory_order_relaxed);
+            front->container.store(nullptr, std::memory_order_relaxed);
         }
         if (front->tid == 0) {
             wakeup_pthread(static_cast<ButexPthreadWaiter *>(front));
@@ -327,7 +327,7 @@ namespace fiber {
     }
 
     int butex_wake_all(void *arg, bool nosignal) {
-        Butex *b = container_of(static_cast<mutil::atomic<int> *>(arg), Butex, value);
+        Butex *b = container_of(static_cast<std::atomic<int> *>(arg), Butex, value);
 
         ButexWaiterList fiber_waiters;
         ButexWaiterList pthread_waiters;
@@ -336,7 +336,7 @@ namespace fiber {
             while (!b->waiters.empty()) {
                 ButexWaiter *bw = b->waiters.head()->value();
                 bw->RemoveFromList();
-                bw->container.store(NULL, mutil::memory_order_relaxed);
+                bw->container.store(nullptr, std::memory_order_relaxed);
                 if (bw->tid) {
                     fiber_waiters.Append(bw);
                 } else {
@@ -385,12 +385,12 @@ namespace fiber {
     }
 
     int butex_wake_except(void *arg, fiber_t excluded_fiber) {
-        Butex *b = container_of(static_cast<mutil::atomic<int> *>(arg), Butex, value);
+        Butex *b = container_of(static_cast<std::atomic<int> *>(arg), Butex, value);
 
         ButexWaiterList fiber_waiters;
         ButexWaiterList pthread_waiters;
         {
-            ButexWaiter *excluded_waiter = NULL;
+            ButexWaiter *excluded_waiter = nullptr;
             MELON_SCOPED_LOCK(b->waiter_lock);
             while (!b->waiters.empty()) {
                 ButexWaiter *bw = b->waiters.head()->value();
@@ -399,12 +399,12 @@ namespace fiber {
                 if (bw->tid) {
                     if (bw->tid != excluded_fiber) {
                         fiber_waiters.Append(bw);
-                        bw->container.store(NULL, mutil::memory_order_relaxed);
+                        bw->container.store(nullptr, std::memory_order_relaxed);
                     } else {
                         excluded_waiter = bw;
                     }
                 } else {
-                    bw->container.store(NULL, mutil::memory_order_relaxed);
+                    bw->container.store(nullptr, std::memory_order_relaxed);
                     pthread_waiters.Append(bw);
                 }
             }
@@ -447,10 +447,10 @@ namespace fiber {
     }
 
     int butex_requeue(void *arg, void *arg2) {
-        Butex *b = container_of(static_cast<mutil::atomic<int> *>(arg), Butex, value);
-        Butex *m = container_of(static_cast<mutil::atomic<int> *>(arg2), Butex, value);
+        Butex *b = container_of(static_cast<std::atomic<int> *>(arg), Butex, value);
+        Butex *m = container_of(static_cast<std::atomic<int> *>(arg2), Butex, value);
 
-        ButexWaiter *front = NULL;
+        ButexWaiter *front = nullptr;
         {
             std::unique_lock<internal::FastPthreadMutex> lck1(b->waiter_lock, std::defer_lock);
             std::unique_lock<internal::FastPthreadMutex> lck2(m->waiter_lock, std::defer_lock);
@@ -461,13 +461,13 @@ namespace fiber {
 
             front = b->waiters.head()->value();
             front->RemoveFromList();
-            front->container.store(NULL, mutil::memory_order_relaxed);
+            front->container.store(nullptr, std::memory_order_relaxed);
 
             while (!b->waiters.empty()) {
                 ButexWaiter *bw = b->waiters.head()->value();
                 bw->RemoveFromList();
                 m->waiters.Append(bw);
-                bw->container.store(m, mutil::memory_order_relaxed);
+                bw->container.store(m, std::memory_order_relaxed);
             }
         }
 
@@ -499,16 +499,16 @@ namespace fiber {
     inline bool erase_from_butex(ButexWaiter *bw, bool wakeup, WaiterState state) {
         // `bw' is guaranteed to be valid inside this function because waiter
         // will wait until this function being cancelled or finished.
-        // NOTE: This function must be no-op when bw->container is NULL.
+        // NOTE: This function must be no-op when bw->container is nullptr.
         bool erased = false;
         Butex *b;
         int saved_errno = errno;
-        while ((b = bw->container.load(mutil::memory_order_acquire))) {
-            // b can be NULL when the waiter is scheduled but queued.
+        while ((b = bw->container.load(std::memory_order_acquire))) {
+            // b can be nullptr when the waiter is scheduled but queued.
             MELON_SCOPED_LOCK(b->waiter_lock);
-            if (b == bw->container.load(mutil::memory_order_relaxed)) {
+            if (b == bw->container.load(std::memory_order_relaxed)) {
                 bw->RemoveFromList();
-                bw->container.store(NULL, mutil::memory_order_relaxed);
+                bw->container.store(nullptr, std::memory_order_relaxed);
                 if (bw->tid) {
                     static_cast<ButexFiberWaiter *>(bw)->waiter_state = state;
                 }
@@ -548,13 +548,13 @@ namespace fiber {
         // value.
         {
             MELON_SCOPED_LOCK(b->waiter_lock);
-            if (b->value.load(mutil::memory_order_relaxed) != bw->expected_value) {
+            if (b->value.load(std::memory_order_relaxed) != bw->expected_value) {
                 bw->waiter_state = WAITER_STATE_UNMATCHEDVALUE;
             } else if (bw->waiter_state == WAITER_STATE_READY/*1*/ &&
                        !bw->task_meta->interrupted) {
                 b->waiters.Append(bw);
-                bw->container.store(b, mutil::memory_order_relaxed);
-                if (bw->abstime != NULL) {
+                bw->container.store(b, std::memory_order_relaxed);
+                if (bw->abstime != nullptr) {
                     bw->sleep_id = get_global_timer_thread()->schedule(
                             erase_from_butex_and_wakeup, bw, *bw->abstime);
                     if (!bw->sleep_id) {  // TimerThread stopped.
@@ -566,7 +566,7 @@ namespace fiber {
             }
         }
 
-        // b->container is NULL which makes erase_from_butex_and_wakeup() and
+        // b->container is nullptr which makes erase_from_butex_and_wakeup() and
         // TaskGroup::interrupt() no-op, there's no race between following code and
         // the two functions. The on-stack ButexFiberWaiter is safe to use and
         // bw->waiter_state will not change again.
@@ -586,22 +586,22 @@ namespace fiber {
 
     static int butex_wait_from_pthread(TaskGroup *g, Butex *b, int expected_value,
                                        const timespec *abstime) {
-        TaskMeta *task = NULL;
+        TaskMeta *task = nullptr;
         ButexPthreadWaiter pw;
         pw.tid = 0;
-        pw.sig.store(PTHREAD_NOT_SIGNALLED, mutil::memory_order_relaxed);
+        pw.sig.store(PTHREAD_NOT_SIGNALLED, std::memory_order_relaxed);
         int rc = 0;
 
         if (g) {
             task = g->current_task();
-            task->current_waiter.store(&pw, mutil::memory_order_release);
+            task->current_waiter.store(&pw, std::memory_order_release);
         }
         b->waiter_lock.lock();
-        if (b->value.load(mutil::memory_order_relaxed) != expected_value) {
+        if (b->value.load(std::memory_order_relaxed) != expected_value) {
             b->waiter_lock.unlock();
             errno = EWOULDBLOCK;
             rc = -1;
-        } else if (task != NULL && task->interrupted) {
+        } else if (task != nullptr && task->interrupted) {
             b->waiter_lock.unlock();
             // Race with set and may consume multiple interruptions, which are OK.
             task->interrupted = false;
@@ -609,7 +609,7 @@ namespace fiber {
             rc = -1;
         } else {
             b->waiters.Append(&pw);
-            pw.container.store(b, mutil::memory_order_relaxed);
+            pw.container.store(b, std::memory_order_relaxed);
             b->waiter_lock.unlock();
 
 #ifdef SHOW_FIBER_BUTEX_WAITER_COUNT_IN_VARS
@@ -622,10 +622,10 @@ namespace fiber {
 #endif
         }
         if (task) {
-            // If current_waiter is NULL, TaskGroup::interrupt() is running and
-            // using pw, spin until current_waiter != NULL.
+            // If current_waiter is nullptr, TaskGroup::interrupt() is running and
+            // using pw, spin until current_waiter != nullptr.
             BT_LOOP_WHEN(task->current_waiter.exchange(
-                    NULL, mutil::memory_order_acquire) == NULL,
+                    nullptr, std::memory_order_acquire) == nullptr,
                          30/*nops before sched_yield*/);
             if (task->interrupted) {
                 task->interrupted = false;
@@ -639,22 +639,22 @@ namespace fiber {
     }
 
     int butex_wait(void *arg, int expected_value, const timespec *abstime) {
-        Butex *b = container_of(static_cast<mutil::atomic<int> *>(arg), Butex, value);
-        if (b->value.load(mutil::memory_order_relaxed) != expected_value) {
+        Butex *b = container_of(static_cast<std::atomic<int> *>(arg), Butex, value);
+        if (b->value.load(std::memory_order_relaxed) != expected_value) {
             errno = EWOULDBLOCK;
             // Sometimes we may take actions immediately after unmatched butex,
             // this fence makes sure that we see changes before changing butex.
-            mutil::atomic_thread_fence(mutil::memory_order_acquire);
+            std::atomic_thread_fence(std::memory_order_acquire);
             return -1;
         }
         TaskGroup *g = tls_task_group;
-        if (NULL == g || g->is_current_pthread_task()) {
+        if (nullptr == g || g->is_current_pthread_task()) {
             return butex_wait_from_pthread(g, b, expected_value, abstime);
         }
         ButexFiberWaiter bbw;
         // tid is 0 iff the thread is non-fiber
         bbw.tid = g->current_tid();
-        bbw.container.store(NULL, mutil::memory_order_relaxed);
+        bbw.container.store(nullptr, std::memory_order_relaxed);
         bbw.task_meta = g->current_task();
         bbw.sleep_id = 0;
         bbw.waiter_state = WAITER_STATE_READY;
@@ -663,7 +663,7 @@ namespace fiber {
         bbw.control = g->control();
         bbw.abstime = abstime;
 
-        if (abstime != NULL) {
+        if (abstime != nullptr) {
             // Schedule timer before queueing. If the timer is triggered before
             // queueing, cancel queueing. This is a kind of optimistic locking.
             if (mutil::timespec_to_microseconds(*abstime) <
@@ -680,7 +680,7 @@ namespace fiber {
 
         // release fence matches with acquire fence in interrupt_and_consume_waiters
         // in task_group.cpp to guarantee visibility of `interrupted'.
-        bbw.task_meta->current_waiter.store(&bbw, mutil::memory_order_release);
+        bbw.task_meta->current_waiter.store(&bbw, std::memory_order_release);
         g->set_remained(wait_for_butex, &bbw);
         TaskGroup::sched(&g);
 
@@ -689,10 +689,10 @@ namespace fiber {
         BT_LOOP_WHEN(unsleep_if_necessary(&bbw, get_global_timer_thread()) < 0,
                      30/*nops before sched_yield*/);
 
-        // If current_waiter is NULL, TaskGroup::interrupt() is running and using bbw.
-        // Spin until current_waiter != NULL.
+        // If current_waiter is nullptr, TaskGroup::interrupt() is running and using bbw.
+        // Spin until current_waiter != nullptr.
         BT_LOOP_WHEN(bbw.task_meta->current_waiter.exchange(
-                NULL, mutil::memory_order_acquire) == NULL,
+                nullptr, std::memory_order_acquire) == nullptr,
                      30/*nops before sched_yield*/);
 #ifdef SHOW_FIBER_BUTEX_WAITER_COUNT_IN_VARS
         num_waiters << -1;

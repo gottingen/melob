@@ -30,6 +30,7 @@
 #include <melon/fiber/types.h>                        // FIBER_STACKTYPE_*
 #include <melon/fiber/stack.h>
 #include <turbo/flags/flag.h>                        // FLAGS_*
+#include <atomic>                               // std::atomic
 
 TURBO_FLAG(int32_t, stack_size_small, 32768, "size of small stacks");
 TURBO_FLAG(int32_t, stack_size_normal, 1048576, "size of normal stacks");
@@ -48,14 +49,14 @@ namespace fiber {
     static_assert(FIBER_STACKTYPE_LARGE == STACK_TYPE_LARGE, "must match");
     static_assert(STACK_TYPE_MAIN == 0, "must ne 0");
 
-    static mutil::static_atomic<int64_t> s_stack_count = MUTIL_STATIC_ATOMIC_INIT(0);
+    static std::atomic<int64_t> s_stack_count = MUTIL_STATIC_ATOMIC_INIT(0);
 
     static int64_t get_stack_count(void *) {
-        return s_stack_count.load(mutil::memory_order_relaxed);
+        return s_stack_count.load(std::memory_order_relaxed);
     }
 
     static melon::var::PassiveStatus<int64_t> var_stack_count(
-            "fiber_stack_count", get_stack_count, NULL);
+            "fiber_stack_count", get_stack_count, nullptr);
 
     int allocate_stack_storage(StackStorage *s, int stacksize_in, int guardsize_in) {
         const static int PAGESIZE = getpagesize();
@@ -70,12 +71,12 @@ namespace fiber {
 
         if (guardsize_in <= 0) {
             void *mem = malloc(stacksize);
-            if (NULL == mem) {
+            if (nullptr == mem) {
                 PLOG_EVERY_N_SEC(ERROR, 1) << "Fail to malloc (size="
                                            << stacksize << ")";
                 return -1;
             }
-            s_stack_count.fetch_add(1, mutil::memory_order_relaxed);
+            s_stack_count.fetch_add(1, std::memory_order_relaxed);
             s->bottom = (char *) mem + stacksize;
             s->stacksize = stacksize;
             s->guardsize = 0;
@@ -93,13 +94,13 @@ namespace fiber {
                     ~PAGESIZE_M1;
 
             const int memsize = stacksize + guardsize;
-            void *const mem = mmap(NULL, memsize, (PROT_READ | PROT_WRITE),
+            void *const mem = mmap(nullptr, memsize, (PROT_READ | PROT_WRITE),
                                    (MAP_PRIVATE | MAP_ANONYMOUS), -1, 0);
 
             if (MAP_FAILED == mem) {
                 PLOG_EVERY_N_SEC(ERROR, 1)
                             << "Fail to mmap size=" << memsize << " stack_count="
-                            << s_stack_count.load(mutil::memory_order_relaxed)
+                            << s_stack_count.load(std::memory_order_relaxed)
                             << ", possibly limited by /proc/sys/vm/max_map_count";
                 // may fail due to limit of max_map_count (65536 in default)
                 return -1;
@@ -120,7 +121,7 @@ namespace fiber {
                 return -1;
             }
 
-            s_stack_count.fetch_add(1, mutil::memory_order_relaxed);
+            s_stack_count.fetch_add(1, std::memory_order_relaxed);
             s->bottom = (char *) mem + memsize;
             s->stacksize = stacksize;
             s->guardsize = guardsize;
@@ -142,7 +143,7 @@ namespace fiber {
         if ((uintptr_t) s->bottom <= (uintptr_t) memsize) {
             return;
         }
-        s_stack_count.fetch_sub(1, mutil::memory_order_relaxed);
+        s_stack_count.fetch_sub(1, std::memory_order_relaxed);
         if (s->guardsize <= 0) {
             free((char *) s->bottom - memsize);
         } else {

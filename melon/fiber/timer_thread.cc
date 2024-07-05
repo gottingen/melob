@@ -29,6 +29,7 @@
 #include <melon/fiber/sys_futex.h>
 #include <melon/fiber/timer_thread.h>
 #include <melon/fiber/log.h>
+#include <atomic>
 
 namespace fiber {
 
@@ -55,7 +56,7 @@ namespace fiber {
         // initial_version + 1: running
         // initial_version + 2: removed (also the version of next Task reused
         //                      this struct)
-        mutil::atomic<uint32_t> version;
+        std::atomic<uint32_t> version;
 
         Task() : version(2/*skip 0*/) {}
 
@@ -72,7 +73,7 @@ namespace fiber {
     class MELON_CACHELINE_ALIGNMENT TimerThread::Bucket {
     public:
         Bucket()
-                : _nearest_run_time(std::numeric_limits<int64_t>::max()), _task_head(NULL) {
+                : _nearest_run_time(std::numeric_limits<int64_t>::max()), _task_head(nullptr) {
         }
 
         ~Bucket() {}
@@ -120,18 +121,18 @@ namespace fiber {
     void *TimerThread::run_this(void *arg) {
         mutil::PlatformThread::SetName("melon_timer");
         static_cast<TimerThread *>(arg)->run();
-        return NULL;
+        return nullptr;
     }
 
     TimerThread::TimerThread()
-            : _started(false), _stop(false), _buckets(NULL), _nearest_run_time(std::numeric_limits<int64_t>::max()),
+            : _started(false), _stop(false), _buckets(nullptr), _nearest_run_time(std::numeric_limits<int64_t>::max()),
               _nsignals(0), _thread(0) {
     }
 
     TimerThread::~TimerThread() {
         stop_and_join();
         delete[] _buckets;
-        _buckets = NULL;
+        _buckets = nullptr;
     }
 
     int TimerThread::start(const TimerThreadOptions *options_in) {
@@ -150,11 +151,11 @@ namespace fiber {
             return EINVAL;
         }
         _buckets = new(std::nothrow) Bucket[_options.num_buckets];
-        if (NULL == _buckets) {
+        if (nullptr == _buckets) {
             LOG(ERROR) << "Fail to new _buckets";
             return ENOMEM;
         }
-        const int ret = pthread_create(&_thread, NULL, TimerThread::run_this, this);
+        const int ret = pthread_create(&_thread, nullptr, TimerThread::run_this, this);
         if (ret) {
             return ret;
         }
@@ -163,7 +164,7 @@ namespace fiber {
     }
 
     TimerThread::Task *TimerThread::Bucket::consume_tasks() {
-        Task *head = NULL;
+        Task *head = nullptr;
         if (_task_head) { // NOTE: schedule() and consume_tasks() are sequenced
             // by TimerThread._nearest_run_time and fenced by TimerThread._mutex.
             // We can avoid touching the mutex and related cacheline when the
@@ -171,7 +172,7 @@ namespace fiber {
             MELON_SCOPED_LOCK(_mutex);
             if (_task_head) {
                 head = _task_head;
-                _task_head = NULL;
+                _task_head = nullptr;
                 _nearest_run_time = std::numeric_limits<int64_t>::max();
             }
         }
@@ -183,17 +184,17 @@ namespace fiber {
                                   const timespec &abstime) {
         mutil::ResourceId<Task> slot_id;
         Task *task = mutil::get_resource<Task>(&slot_id);
-        if (task == NULL) {
+        if (task == nullptr) {
             ScheduleResult result = {INVALID_TASK_ID, false};
             return result;
         }
-        task->next = NULL;
+        task->next = nullptr;
         task->fn = fn;
         task->arg = arg;
         task->run_time = mutil::timespec_to_microseconds(abstime);
-        uint32_t version = task->version.load(mutil::memory_order_relaxed);
+        uint32_t version = task->version.load(std::memory_order_relaxed);
         if (version == 0) {  // skip 0.
-            task->version.fetch_add(2, mutil::memory_order_relaxed);
+            task->version.fetch_add(2, std::memory_order_relaxed);
             version = 2;
         }
         const TaskId id = make_task_id(slot_id, version);
@@ -214,7 +215,7 @@ namespace fiber {
 
     TimerThread::TaskId TimerThread::schedule(
             void (*fn)(void *), void *arg, const timespec &abstime) {
-        if (_stop.load(mutil::memory_order_relaxed) || !_started) {
+        if (_stop.load(std::memory_order_relaxed) || !_started) {
             // Not add tasks when TimerThread is about to stop.
             return INVALID_TASK_ID;
         }
@@ -252,7 +253,7 @@ namespace fiber {
     int TimerThread::unschedule(TaskId task_id) {
         const mutil::ResourceId<Task> slot_id = slot_of_task_id(task_id);
         Task *const task = mutil::address_resource(slot_id);
-        if (task == NULL) {
+        if (task == nullptr) {
             LOG(ERROR) << "Invalid task_id=" << task_id;
             return -1;
         }
@@ -263,7 +264,7 @@ namespace fiber {
         // to make sure that we see all changes brought by fn(arg).
         if (task->version.compare_exchange_strong(
                 expected_version, id_version + 2,
-                mutil::memory_order_acquire)) {
+                std::memory_order_acquire)) {
             return 0;
         }
         return (expected_version == id_version + 1) ? 1 : -1;
@@ -274,11 +275,11 @@ namespace fiber {
         uint32_t expected_version = id_version;
         // This CAS is rarely contended, should be fast.
         if (version.compare_exchange_strong(
-                expected_version, id_version + 1, mutil::memory_order_relaxed)) {
+                expected_version, id_version + 1, std::memory_order_relaxed)) {
             fn(arg);
             // The release fence is paired with acquire fence in
             // TimerThread::unschedule to make changes of fn(arg) visible.
-            version.store(id_version + 2, mutil::memory_order_release);
+            version.store(id_version + 2, std::memory_order_release);
             mutil::return_resource(slot_of_task_id(task_id));
             return true;
         } else if (expected_version == id_version + 2) {
@@ -295,8 +296,8 @@ namespace fiber {
 
     bool TimerThread::Task::try_delete() {
         const uint32_t id_version = version_of_task_id(task_id);
-        if (version.load(mutil::memory_order_relaxed) != id_version) {
-            CHECK_EQ(version.load(mutil::memory_order_relaxed), id_version + 2);
+        if (version.load(std::memory_order_relaxed) != id_version) {
+            CHECK_EQ(version.load(std::memory_order_relaxed), id_version + 2);
             mutil::return_resource(slot_of_task_id(task_id));
             return true;
         }
@@ -334,7 +335,7 @@ namespace fiber {
             busy_seconds_second.expose_as(_options.var_prefix, "usage");
         }
 
-        while (!_stop.load(mutil::memory_order_relaxed)) {
+        while (!_stop.load(std::memory_order_relaxed)) {
             // Clear _nearest_run_time before consuming tasks from buckets.
             // This helps us to be aware of earliest task of the new tasks before we
             // would run the consumed tasks.
@@ -415,7 +416,7 @@ namespace fiber {
                     expected_nsignals = _nsignals;
                 }
             }
-            timespec *ptimeout = NULL;
+            timespec *ptimeout = nullptr;
             timespec next_timeout = {0, 0};
             const int64_t now = mutil::gettimeofday_us();
             if (next_run_time != std::numeric_limits<int64_t>::max()) {
@@ -430,7 +431,7 @@ namespace fiber {
     }
 
     void TimerThread::stop_and_join() {
-        _stop.store(true, mutil::memory_order_relaxed);
+        _stop.store(true, std::memory_order_relaxed);
         if (_started) {
             {
                 MELON_SCOPED_LOCK(_mutex);
@@ -442,17 +443,17 @@ namespace fiber {
                 // stop_and_join was not called from a running task.
                 // wake up the timer thread in case it is sleeping.
                 futex_wake_private(&_nsignals, 1);
-                pthread_join(_thread, NULL);
+                pthread_join(_thread, nullptr);
             }
         }
     }
 
     static pthread_once_t g_timer_thread_once = PTHREAD_ONCE_INIT;
-    static TimerThread *g_timer_thread = NULL;
+    static TimerThread *g_timer_thread = nullptr;
 
     static void init_global_timer_thread() {
         g_timer_thread = new(std::nothrow) TimerThread;
-        if (g_timer_thread == NULL) {
+        if (g_timer_thread == nullptr) {
             LOG(FATAL) << "Fail to new g_timer_thread";
             return;
         }
@@ -462,7 +463,7 @@ namespace fiber {
         if (rc != 0) {
             LOG(FATAL) << "Fail to start timer_thread, " << berror(rc);
             delete g_timer_thread;
-            g_timer_thread = NULL;
+            g_timer_thread = nullptr;
             return;
         }
     }
