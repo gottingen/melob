@@ -26,23 +26,6 @@ elseif (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 endif ()
 
 ##################################
-# gflags
-##################################
-macro(carbin_find_static_gflags)
-    set(GFLAGS_STATIC_FOUND FALSE)
-    find_path(GFLAGS_INCLUDE_DIR NAMES gflags/gflags.h PATHS ${EA_ROOT})
-    find_library(GFLAGS_STATIC_LIB NAMES libgflags.a PATHS ${EA_ROOT})
-    if (GFLAGS_INCLUDE_DIR AND GFLAGS_STATIC_LIB)
-        set(GFLAGS_STATIC_FOUND TRUE)
-    endif ()
-    message(STATUS "GFLAGS_STATIC_FOUND: ${GFLAGS_STATIC_FOUND}")
-    if (GFLAGS_STATIC_FOUND)
-        message(STATUS "GFLAGS_INCLUDE_PATH: ${GFLAGS_INCLUDE_DIR}")
-        message(STATUS "GFLAGS_STATIC_LIB: ${GFLAGS_STATIC_LIB}")
-    endif ()
-endmacro()
-
-##################################
 # zlib
 ##################################
 macro(carbin_find_static_zlib)
@@ -103,10 +86,6 @@ message(STATUS "Protobuf protoc: ${PROTOBUF_PROTOC_LIBRARY}")
 find_package(turbo 0.5.6 REQUIRED)
 get_target_property(TURBO_STATIC_LIB turbo::turbo_static LOCATION)
 
-carbin_find_static_gflags()
-if (NOT GFLAGS_STATIC_FOUND)
-    message(FATAL_ERROR "gflags not found")
-endif ()
 carbin_find_static_zlib()
 if (NOT ZLIB_FOUND)
     message(FATAL_ERROR "zlib not found")
@@ -117,7 +96,6 @@ if (NOT LEVELDB_STATIC_FOUND)
 endif ()
 
 set(MELON_DEPS_LINK
-        ${GFLAGS_STATIC_LIB}
         ${PROTOBUF_LIBRARY}
         ${PROTOBUF_PROTOC_LIBRARY}
         ${LEVELDB_STATIC_LIB}

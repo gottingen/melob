@@ -57,14 +57,6 @@ endif ()
 
 set(CARBIN_DEPS_INCLUDE "")
 ############################################################
-# gflags
-############################################################
-carbin_find_static_gflags()
-if (NOT GFLAGS_STATIC_FOUND)
-    message(FATAL_ERROR "Fail to find gflags")
-endif ()
-list(APPEND CARBIN_DEPS_INCLUDE ${GFLAGS_INCLUDE_DIR})
-############################################################
 # leveldb
 ############################################################
 carbin_find_static_leveldb()
@@ -128,7 +120,6 @@ carbin_print("Turbo static lib: ${TURBO_STATIC_LIB}")
 # CARBIN_SYSTEM_DYLINK, using it for fun.
 ##########################################################
 set(MELON_DEPS_LINK
-        ${GFLAGS_STATIC_LIB}
         ${PROTOBUF_LIBRARY}
         ${PROTOBUF_PROTOC_LIBRARY}
         ${LEVELDB_STATIC_LIB}
