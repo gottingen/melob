@@ -101,12 +101,30 @@ macro(melon_find_zlib)
         carbin_print("ZLIB_LIB: ${ZLIB_LIB}")
     endif ()
 endmacro()
+macro(melon_find_snappy)
+    set(SNAPPY_FOUND FALSE)
+    find_path(SNAPPY_INCLUDE_DIR NAMES snappy.h)
+    find_library(SNAPPY_LIB NAMES snappy libsnappy.a)
+    if (SNAPPY_LIB AND SNAPPY_INCLUDE_DIR)
+        set(SNAPPY_FOUND TRUE)
+    endif ()
+    carbin_print("SNAPPY_FOUND: ${SNAPPY_FOUND}")
+    if (SNAPPY_FOUND)
+        carbin_print("SNAPPY_INCLUDE_DIR: ${SNAPPY_INCLUDE_DIR}")
+        carbin_print("SNAPPY_LIB: ${SNAPPY_LIB}")
+    endif ()
+endmacro()
+
 melon_find_zlib()
 if (NOT ZLIB_FOUND)
     message(FATAL_ERROR "Fail to find zlib")
 endif ()
 list(APPEND CARBIN_DEPS_INCLUDE ${ZLIB_INCLUDE_DIR})
 
+melon_find_snappy()
+if (NOT SNAPPY_FOUND)
+    message(FATAL_ERROR "Fail to find snappy")
+endif ()
 ############################################################
 # turbo
 ############################################################
@@ -126,6 +144,7 @@ set(MELON_DEPS_LINK
         ${OPENSSL_SSL_LIBRARY}
         ${OPENSSL_CRYPTO_LIBRARY}
         ${ZLIB_LIB}
+        ${SNAPPY_LIB}
         ${TURBO_STATIC_LIB}
         ${CARBIN_SYSTEM_DYLINK}
         )

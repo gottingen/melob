@@ -42,6 +42,24 @@ macro(carbin_find_static_zlib)
     endif ()
 endmacro()
 
+macro(carbin_find_static_snappy)
+    set(SNAPPY_STATIC_FOUND FALSE)
+    find_path(SNAPPY_INCLUDE_DIR NAMES snappy.h PATHS ${EA_ROOT})
+    find_library(SNAPPY_STATIC_LIB NAMES libsnappy.a PATHS ${EA_ROOT})
+    if (SNAPPY_STATIC_LIB)
+        set(SNAPPY_STATIC_FOUND TRUE)
+    endif ()
+
+    if (SNAPPY_INCLUDE_DIR AND SNAPPY_STATIC_LIB)
+        set(SNAPPY_STATIC_FOUND TRUE)
+    endif ()
+    message(STATUS "SNAPPY_STATIC_FOUND: ${SNAPPY_STATIC_FOUND}")
+    if (SNAPPY_STATIC_FOUND)
+        message(STATUS "SNAPPY_INCLUDE_PATH: ${SNAPPY_INCLUDE_DIR}")
+        message(STATUS "SNAPPY_STATIC_LIB: ${SNAPPY_STATIC_LIB}")
+    endif ()
+endmacro()
+
 ##################################
 # leveldb
 ##################################
@@ -90,6 +108,10 @@ carbin_find_static_zlib()
 if (NOT ZLIB_FOUND)
     message(FATAL_ERROR "zlib not found")
 endif ()
+carbin_find_static_snappy()
+if (NOT SNAPPY_STATIC_FOUND)
+    message(FATAL_ERROR "snappy not found")
+endif ()
 carbin_find_static_leveldb()
 if (NOT LEVELDB_STATIC_FOUND)
     message(FATAL_ERROR "leveldb not found")
@@ -102,6 +124,7 @@ set(MELON_DEPS_LINK
         ${OPENSSL_SSL_LIBRARY}
         ${OPENSSL_CRYPTO_LIBRARY}
         ${ZLIB_LIB}
+        ${SNAPPY_STATIC_LIB}
         ${TURBO_STATIC_LIB}
         ${CARBIN_SYSTEM_DYLINK}
         )

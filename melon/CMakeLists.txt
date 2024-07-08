@@ -91,9 +91,6 @@ set(UTILITY_SOURCES
         ${PROJECT_SOURCE_DIR}/melon/utility/threading/thread_local_storage_posix.cc
         ${PROJECT_SOURCE_DIR}/melon/utility/threading/thread_restrictions.cc
         ${PROJECT_SOURCE_DIR}/melon/utility/threading/watchdog.cc
-        ${PROJECT_SOURCE_DIR}/melon/utility/snappy/snappy.cc
-        ${PROJECT_SOURCE_DIR}/melon/utility/snappy/snappy-sinksource.cc
-        ${PROJECT_SOURCE_DIR}/melon/utility/snappy/snappy-stubs-internal.cc
         ${PROJECT_SOURCE_DIR}/melon/utility/time/clock.cc
         ${PROJECT_SOURCE_DIR}/melon/utility/time/default_clock.cc
         ${PROJECT_SOURCE_DIR}/melon/utility/time/default_tick_clock.cc
