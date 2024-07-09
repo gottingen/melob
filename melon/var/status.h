@@ -99,7 +99,7 @@ namespace melon::var {
 
             void take_sample() { _series.append(_owner->get_value()); }
 
-            void describe(std::ostream &os) { _series.describe(os, NULL); }
+            void describe(std::ostream &os) { _series.describe(os, nullptr); }
 
         private:
             Status *_owner;
@@ -107,18 +107,18 @@ namespace melon::var {
         };
 
     public:
-        Status() : _series_sampler(NULL) {}
+        Status() : _series_sampler(nullptr) {}
 
-        Status(const T &value) : _value(value), _series_sampler(NULL) {}
+        Status(const T &value) : _value(value), _series_sampler(nullptr) {}
 
         Status(const std::string_view &name, const T &value)
-                : _value(value), _series_sampler(NULL) {
+                : _value(value), _series_sampler(nullptr) {
             this->expose(name);
         }
 
         Status(const std::string_view &prefix,
                const std::string_view &name, const T &value)
-                : _value(value), _series_sampler(NULL) {
+                : _value(value), _series_sampler(nullptr) {
             this->expose_as(prefix, name);
         }
 
@@ -126,7 +126,7 @@ namespace melon::var {
             hide();
             if (_series_sampler) {
                 _series_sampler->destroy();
-                _series_sampler = NULL;
+                _series_sampler = nullptr;
             }
         }
 
@@ -144,7 +144,7 @@ namespace melon::var {
         }
 
         int describe_series(std::ostream &os, const SeriesOptions &options) const override {
-            if (_series_sampler == NULL) {
+            if (_series_sampler == nullptr) {
                 return 1;
             }
             if (!options.test_only) {
@@ -159,8 +159,8 @@ namespace melon::var {
                         DisplayFilter display_filter) override {
             const int rc = Variable::expose_impl(prefix, name, display_filter);
             if (rc == 0 &&
-                _series_sampler == NULL &&
-                FLAGS_save_series) {
+                _series_sampler == nullptr &&
+                turbo::get_flag(FLAGS_save_series)) {
                 _series_sampler = new SeriesSampler(this);
                 _series_sampler->schedule();
             }
