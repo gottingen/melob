@@ -184,7 +184,7 @@ install(DIRECTORY ${PROJECT_NAME}
         PATTERN "*.hpp"
         PATTERN "*.proto"
         )
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/example DESTINATION share/melon)
+#install(DIRECTORY ${PROJECT_SOURCE_DIR}/example DESTINATION share/melon)
 
 # Layout. This works for all platforms:
 #   * <prefix>/lib*/cmake/<PROJECT-NAME>

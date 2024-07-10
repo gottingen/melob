@@ -21,7 +21,7 @@
 
 #include <melon/br/launch.h>
 #include <collie/nlohmann/json.hpp>
-#include <turbo/flags/servlet.h>
+#include <turbo/bootstrap/servlet.h>
 #include <turbo/log/logging.h>
 #include <turbo/flags/reflection.h>
 #include <turbo/strings/str_split.h>
@@ -41,7 +41,7 @@ namespace melon {
     static std::string cmd_str;
     static std::string args_list;
     static std::string work_dir;
-    std::vector<std::string> launch_params;
+    std::vector<std::string> launch_default_conf;
 
     std::once_flag env_flag;
     static void init_envs() {
@@ -67,6 +67,7 @@ namespace melon {
             args_list += (*args)[i];
             args_list += " ";
         }
+        launch_default_conf = turbo::Servlet::instance().default_flags_files();
         char buf[1024];
         if(getcwd(buf, sizeof(buf)) != nullptr) {
             work_dir = buf;
@@ -119,6 +120,11 @@ namespace melon {
         j["cmd"] = get_cmd();
         j["args"] = get_args();
         j["work_dir"] = get_work_dir();
+        if(!launch_default_conf.empty()) {
+            j["default_conf"] = launch_default_conf;
+        } else {
+            j["default_conf"] = "";
+        }
         response->set_body(j.dump());
     }
 
